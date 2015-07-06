@@ -1,0 +1,7 @@
+##################################################################################
+# Cloudify bootstrap Local Manager plugin
+##################################################################################
+plugins:
+    bootstrap_local:
+        executor: central_deployment_agent
+        source: http://localhost:8088/bootstrap-local-manager-plugin-1.2.zip
