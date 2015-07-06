@@ -206,6 +206,7 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
     lgr.info('initializing manager on local machine')
 
     def post_bootstrap_actions(wait_for_services_timeout=180):
+        import sys
         port = 80
         lgr.info(
             'waiting for cloudify management services to start on port {0}'.format(port))
@@ -229,8 +230,6 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
         try:
             _upload_provider_context('', os.path.expanduser(cloudify_home), provider_context)
         except:
-            import sys
-
             lgr.error(str(sys.exc_info()))
 
             if ctx.instance.runtime_properties.has_key('containers_started'):
@@ -630,49 +629,49 @@ def _bootstrap_elasticsearch(elasticsearch_host='localhost', port=9200):
     lgr.info("Removing old Cloudify Indexes and bootstrapping new once")
     es = 'http://{0}:{1}'.format(elasticsearch_host, port)
 
-    delete_events_indexe = 'curl --retry 5 --retry-delay 3 -XDELETE {0}/cloudify_events'.format(es)
+    delete_events_indexe = 'curl --retry 5 --retry-delay 3 -XDELETE {0}/cloudify_events/'.format(es)
     delete_storage_index = 'curl --retry 5 --retry-delay 3 -XDELETE {0}/cloudify_storage'.format(es)
 
-    _run_command(delete_events_indexe)
-    _run_command(delete_storage_index)
+    _run_command(delete_events_indexe, ignore_failures=True)
+    _run_command(delete_storage_index, ignore_failures=True)
 
-    create_events_index = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_events -d \'{"settings": ' \
-                          '{"analysis": {"analyzer": {"default": {"tokenizer": "whitespace"}}}}}\''.format(es)
+    create_events_index = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_events -d \'{{"settings": ' \
+                          '{{"analysis":{{"analyzer":{{"default":{{"tokenizer": "whitespace"}}}}}}}}}}\''.format(es)
     _run_command(create_events_index)
 
-    create_storage_index = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage -d \'{"settings": ' \
-                           '{"analysis": {"analyzer": {"default": {"tokenizer": "whitespace"}}}}}\''.format(es)
+    create_storage_index = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage -d \'{{"settings": ' \
+                           '{{"analysis":{{"analyzer":{{"default":{{"tokenizer": "whitespace"}}}}}}}}}}\''.format(es)
     _run_command(create_storage_index)
 
     create_blueprint_mapping = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/blueprint/_mapping -d' \
-                               ' \'{"blueprint": {"properties": {"plan": {"enabled": false}}}}\''.format(es)
+                               ' \'{{"blueprint":{{"properties":{{"plan":{{"enabled": false}}}}}}}}\''.format(es)
     _run_command(create_blueprint_mapping)
 
     create_deployment_mapping = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/deployment/_mapping -d ' \
-                                '\'{"deployment": {"properties": {"workflows": {"enabled": false}, "inputs": ' \
-                                '{"enabled": false}, "policy_type": {"enabled": false}, "policy_triggers": ' \
-                                '{"enabled": false}, "groups": {"enabled": false}, "outputs": {"enabled": ' \
-                                'false}}}}\''.format(es)
+                                '\'{{"deployment":{{"properties":{{"workflows":{{"enabled": false}}, "inputs": ' \
+                                '{{"enabled": false}},"policy_type":{{"enabled": false}}, "policy_triggers": ' \
+                                '{{"enabled": false}}, "groups":{{"enabled": false}},"outputs":{{"enabled": ' \
+                                'false}}}}}}}}\''.format(es)
     _run_command(create_deployment_mapping)
 
-    create_node_mapping = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/node/_mapping -d \'{ "node": ' \
-                          '{ "_id": { "path": "id" }, "properties": {"types": {"type": "string", "index_name": "type"' \
-                          '}, "properties":{ "enabled": false },"operations":{ "enabled": false }, "relationships":' \
-                          '{ "enabled": false } } } }\''.format(es)
+    create_node_mapping = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/node/_mapping -d \'{{"node": ' \
+                          '{{"_id":{{"path": "id"}}, "properties":{{"types":{{"type": "string", "index_name": "type"' \
+                          '}}, "properties":{{"enabled": false}},"operations":{{"enabled": false }},"relationships":' \
+                          '{{"enabled": false }}}}}}}}\''.format(es)
     _run_command(create_node_mapping)
 
     create_node_instance = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/node_instance/_mapping -d ' \
-                           '\'{ "node_instance": { "_id": { "path": "id" }, "properties": { "runtime_properties": { ' \
-                           ' "enabled": false } } } }\''.format(es)
+                           '\'{{"node_instance": {{"_id": {{"path": "id"}}, "properties":{{"runtime_properties":{{' \
+                           '"enabled": false}}}}}}}}\''.format(es)
     _run_command(create_node_instance)
     create_deployment_modification = \
         'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/deployment_modification/_mapping -d ' \
-        '\'{ "deployment_modification": { "_id": { "path": "id" }, "properties": { "modified_nodes": ' \
-        '{ "enabled": false }, "node_instances": { "enabled": false }, "context": { "enabled": false }}}}\''.format(es)
+        '\'{{"deployment_modification":{{"_id":{{"path": "id"}}, "properties":{{"modified_nodes": ' \
+        '{{"enabled": false}}, "node_instances":{{"enabled": false}}, "context":{{"enabled": false}}}}}}}}\''.format(es)
     _run_command(create_deployment_modification)
 
 
-def _run_command(command, use_sudo=False, as_user=None, capture=False):
+def _run_command(command, use_sudo=False, as_user=None, capture=False, ignore_failures=False):
     the_command = command
     if use_sudo:
         if as_user:
@@ -680,7 +679,12 @@ def _run_command(command, use_sudo=False, as_user=None, capture=False):
         else:
             the_command = "sudo {0}".format(command)
     lgr.info(">> command: [{0}]".format(the_command))
-    return run_local(the_command, capture=capture)
+    try:
+        return run_local(the_command, capture=capture)
+    except:
+        if ignore_failures:
+            return True
+        raise
 
 
 def _run_command_in_cfy(command, docker_path=None, use_sudo=True,
