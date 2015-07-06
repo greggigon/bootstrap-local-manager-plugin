@@ -27,7 +27,7 @@ node_types:
 inputs:
   resources_prefix:
     type: string
-  manager_ip:
+  manager_ip:           # Manager IP is being expected as Input
     type: string
   agent_user:
     type: string
@@ -38,7 +38,7 @@ node_templates:
     type: cloudify.nodes.LocalCloudifyManager
     properties:
 
-      elasticsearch:
+      elasticsearch:    # Having Elasticsearch not packaged with Docker CFY container, makes it usefull to bootstrap CFY Indexes
         host: localhost
         port: 9200
         bootstrap: true
@@ -84,8 +84,8 @@ node_templates:
         delete:
           implementation: bootstrap_local_manager.local_manager_plugin.bootstrap.clean_manager_containers_and_image
           inputs:
-            delete_data_container: true
-            delete_image: true
+            delete_data_container: true   # if Data container should be removed when `cfy teardown` is called
+            delete_image: true            # if downloaded Container Image should be removes when `cfy teardown` is called
 
 
 plugins:
