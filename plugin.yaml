@@ -4,4 +4,4 @@
 plugins:
     bootstrap_local:
         executor: central_deployment_agent
-        source: http://localhost:8088/bootstrap-local-manager-plugin-1.2.zip
+        source: https://github.com/greggigon/bootstrap-local-manager-plugin/archive/1.2.zip
