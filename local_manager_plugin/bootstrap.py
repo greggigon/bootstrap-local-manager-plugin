@@ -38,6 +38,8 @@ DEFAULT_SECURITY_LOG_FILE_SIZE_MB = 100
 DEFAULT_SECURITY_LOG_FILES_BACKUP_COUNT = 20
 DEFAULT_SECURITY_MODE = False
 DEFAULT_DOCKER_PATH = 'docker'
+DEFAULT_ELASTICSEARCH_HOST = 'localhost'
+DEFAULT_ELASTICSEARCH_PORT = 9200
 
 lgr = None
 
@@ -182,8 +184,9 @@ def _handle_ssl_configuration(ssl_configuration):
 
 @operation
 def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDIFY_HOME_DIR,
-                     docker_path=DEFAULT_DOCKER_PATH, use_sudo=True,
-                     provider_context=None,
+                     docker_path=DEFAULT_DOCKER_PATH, elasticsearch_host=DEFAULT_ELASTICSEARCH_HOST,
+                     elasticsearch_port=DEFAULT_ELASTICSEARCH_PORT, use_sudo=True, provider_context=None,
+                     bootstrap_elasticsearch=True,
                      docker_service_start_command=None, privileged=False, **kwargs):
     # TODO: revisit this code
     # if 'containers_started' in ctx.instance.runtime_properties:
@@ -195,7 +198,6 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
     #         raise
     #
     #     return
-    # CFY-1627 - plugin dependency should be removed.
     from fabric_plugin.tasks import FabricTaskError
 
     global lgr
@@ -205,7 +207,6 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
 
     def post_bootstrap_actions(wait_for_services_timeout=180):
         port = 80
-        # port = ctx.instance.runtime_properties[REST_PORT]
         lgr.info(
             'waiting for cloudify management services to start on port {0}'.format(port))
         started = _wait_for_management(
@@ -214,11 +215,22 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
             err = 'failed waiting for cloudify management services to start.'
             lgr.info(err)
             raise NonRecoverableError(err)
+
+        if bootstrap_elasticsearch:
+            try:
+                _bootstrap_elasticsearch(elasticsearch_host, elasticsearch_port)
+            except:
+                lgr.error('Failed to bootstrap Elasticsearch Indexes')
+                lgr.error(str(sys.exc_info()))
+        else:
+            lgr.info('Skipping Elasticsearch Bootstrap as not required by Blueprint')
+
         _set_manager_endpoint_data(manager_ip)
         try:
             _upload_provider_context('', os.path.expanduser(cloudify_home), provider_context)
         except:
             import sys
+
             lgr.error(str(sys.exc_info()))
 
             if ctx.instance.runtime_properties.has_key('containers_started'):
@@ -593,10 +605,6 @@ def _upload_provider_context(remote_agents_private_key_path, cloudify_home,
     ctx.instance.runtime_properties[PROVIDER_RUNTIME_PROPERTY] = \
         provider_context
 
-    # 'manager_deployment' is used when running 'cfy use ...'
-    # and then calling teardown or recover. Anyway, this code will only live
-    # until we implement the fuller feature of uploading manager blueprint
-    # deployments to the manager.
     cloudify_configuration['manager_deployment'] = _dump_manager_deployment()
 
     context_file = 'provider-context.json'
@@ -611,13 +619,57 @@ def _upload_provider_context(remote_agents_private_key_path, cloudify_home,
     json.dump(full_provider_context, provider_context_json_file)
     provider_context_json_file.close()
 
-    upload_provider_context_cmd = \
-        'curl --fail -v -XPOST http://localhost:8101/provider/context -H ' \
-        '"Content-Type: application/json" -d @{0}'.format(
-            context_path)
+    upload_provider_context_cmd = 'curl --fail -v -XPOST http://localhost:8101/provider/context -H ' \
+                                  '"Content-Type: application/json" -d @{0}'.format(context_path)
 
     # uploading the provider context to the REST service
-    # _run_command(upload_provider_context_cmd)
+    _run_command(upload_provider_context_cmd)
+
+
+def _bootstrap_elasticsearch(elasticsearch_host='localhost', port=9200):
+    lgr.info("Removing old Cloudify Indexes and bootstrapping new once")
+    es = 'http://{0}:{1}'.format(elasticsearch_host, port)
+
+    delete_events_indexe = 'curl --retry 5 --retry-delay 3 -XDELETE {0}/cloudify_events'.format(es)
+    delete_storage_index = 'curl --retry 5 --retry-delay 3 -XDELETE {0}/cloudify_storage'.format(es)
+
+    _run_command(delete_events_indexe)
+    _run_command(delete_storage_index)
+
+    create_events_index = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_events -d \'{"settings": ' \
+                          '{"analysis": {"analyzer": {"default": {"tokenizer": "whitespace"}}}}}\''.format(es)
+    _run_command(create_events_index)
+
+    create_storage_index = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage -d \'{"settings": ' \
+                           '{"analysis": {"analyzer": {"default": {"tokenizer": "whitespace"}}}}}\''.format(es)
+    _run_command(create_storage_index)
+
+    create_blueprint_mapping = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/blueprint/_mapping -d' \
+                               ' \'{"blueprint": {"properties": {"plan": {"enabled": false}}}}\''.format(es)
+    _run_command(create_blueprint_mapping)
+
+    create_deployment_mapping = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/deployment/_mapping -d ' \
+                                '\'{"deployment": {"properties": {"workflows": {"enabled": false}, "inputs": ' \
+                                '{"enabled": false}, "policy_type": {"enabled": false}, "policy_triggers": ' \
+                                '{"enabled": false}, "groups": {"enabled": false}, "outputs": {"enabled": ' \
+                                'false}}}}\''.format(es)
+    _run_command(create_deployment_mapping)
+
+    create_node_mapping = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/node/_mapping -d \'{ "node": ' \
+                          '{ "_id": { "path": "id" }, "properties": {"types": {"type": "string", "index_name": "type"' \
+                          '}, "properties":{ "enabled": false },"operations":{ "enabled": false }, "relationships":' \
+                          '{ "enabled": false } } } }\''.format(es)
+    _run_command(create_node_mapping)
+
+    create_node_instance = 'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/node_instance/_mapping -d ' \
+                           '\'{ "node_instance": { "_id": { "path": "id" }, "properties": { "runtime_properties": { ' \
+                           ' "enabled": false } } } }\''.format(es)
+    _run_command(create_node_instance)
+    create_deployment_modification = \
+        'curl --retry 5 --retry-delay 3 -XPUT {0}/cloudify_storage/deployment_modification/_mapping -d ' \
+        '\'{ "deployment_modification": { "_id": { "path": "id" }, "properties": { "modified_nodes": ' \
+        '{ "enabled": false }, "node_instances": { "enabled": false }, "context": { "enabled": false }}}}\''.format(es)
+    _run_command(create_deployment_modification)
 
 
 def _run_command(command, use_sudo=False, as_user=None, capture=False):
