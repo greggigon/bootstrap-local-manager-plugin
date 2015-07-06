@@ -15,10 +15,8 @@ from fabric.operations import local as run_local
 from cloudify import ctx
 from cloudify.decorators import operation
 from cloudify.exceptions import NonRecoverableError
-from cloudify_cli import utils
 from cloudify_cli import constants
 
-# internal runtime properties - used by the CLI to store local context
 PROVIDER_RUNTIME_PROPERTY = 'provider'
 MANAGER_IP_RUNTIME_PROPERTY = 'manager_ip'
 MANAGER_USER_RUNTIME_PROPERTY = 'manager_user'
@@ -67,137 +65,65 @@ def creation_validation(cloudify_packages, **kwargs):
         _validate_package_url_accessible(package_url)
 
 
-def stop_manager_container(docker_path=None, use_sudo=True):
-    if not docker_path:
-        docker_path = 'docker'
-    command = '{0} stop cfy'.format(docker_path)
-    if use_sudo:
-        command = 'sudo {0}'.format(command)
-    _run_command(command)
+@operation
+def stop_manager_container(docker_path='docker', use_sudo=False, **kwargs):
+    _run_command('{0} stop cfy'.format(docker_path), use_sudo)
+    lgr.info('Manager container Stopped')
 
 
-def stop_docker_service(docker_service_stop_command=None, use_sudo=True):
-    if not docker_service_stop_command:
-        docker_service_stop_command = 'service docker stop'
-    if use_sudo:
-        docker_service_stop_command = 'sudo {0}' \
-            .format(docker_service_stop_command)
-
-    # this is needed so that docker will stop using the
-    # /var/lib/docker directory, which might be mounted on a
-    # volume.
-    _run_command(docker_service_stop_command)
-
-
-def _install_docker_if_required(docker_path, use_sudo,
-                                docker_service_start_command):
-    # CFY-1627 - plugin dependency should be removed.
-    from fabric_plugin.tasks import FabricTaskError
-
-    if not docker_path:
-        docker_path = 'docker'
-    docker_installed = _is_docker_installed(docker_path, use_sudo)
-    if not docker_installed:
-        try:
-            distro_info = get_machine_distro()
-        except FabricTaskError as e:
-            err = 'failed getting platform distro. error is: {0}' \
-                .format(str(e))
-            lgr.error(err)
-            raise
-        if 'trusty' not in distro_info:
-            err = ('bootstrap using the Docker Cloudify image requires either '
-                   'running on \'Ubuntu 14.04 trusty\' or having Docker '
-                   'pre-installed on the remote machine.')
-            lgr.error(err)
-            raise NonRecoverableError(err)
-
-        try:
-            lgr.info('installing Docker')
-            _run_command('curl -sSL https://get.docker.com/ubuntu/ | sudo sh')
-        except FabricTaskError:
-            err = 'failed installing docker on remote host.'
-            lgr.error(err)
-            raise
-    else:
-        lgr.debug('\"docker\" is already installed.')
-        try:
-            info_command = '{0} info'.format(docker_path)
-            if use_sudo:
-                info_command = 'sudo {0}'.format(info_command)
-            _run_command(info_command)
-        except BaseException as e:
-            lgr.debug('Failed retrieving docker info: {0}'.format(str(e)))
-            lgr.debug('Trying to start docker service')
-            if not docker_service_start_command:
-                docker_service_start_command = 'service docker start'
-            if use_sudo:
-                docker_service_start_command = 'sudo {0}' \
-                    .format(docker_service_start_command)
-            _run_command(docker_service_start_command)
-
-    if use_sudo:
-        docker_exec_command = '{0} {1}'.format('sudo', docker_path)
-    else:
-        docker_exec_command = docker_path
-    return docker_exec_command
+@operation
+def clean_manager_containers_and_image(docker_path='docker', use_sudo=False, delete_data_container=True,
+                                       delete_images=True, **kwargs):
+    _run_command('{0} rm cfy'.format(docker_path), ignore_failures=True, use_sudo=use_sudo)
+    if delete_data_container:
+        _run_command('{0} rm data'.format(docker_path), ignore_failures=True, use_sudo=use_sudo)
+    if delete_images:
+        _run_command('{0} rmi cloudify:latest'.format(docker_path), ignore_failures=True, use_sudo=use_sudo)
 
 
 def _handle_ssl_configuration(ssl_configuration):
     enabled = ssl_configuration.get(
         constants.SSL_ENABLED_PROPERTY_NAME, False)
     if enabled is True:
-        # get cert and key file paths
-        cert_path = ssl_configuration.get(
-            constants.SSL_CERTIFICATE_PATH_PROPERTY_NAME)
-        if not cert_path:
-            raise NonRecoverableError(
-                'SSL is enabled => certificate path must be provided')
-        cert_path = os.path.expanduser(cert_path)
-        if not os.path.exists(cert_path):
-            raise NonRecoverableError(
-                'The certificate path [{0}] does not exist'
-                    .format(cert_path))
-        key_path = ssl_configuration.get(
-            constants.SSL_PRIVATE_KEY_PROPERTY_NAME)
-        if not key_path:
-            raise NonRecoverableError(
-                'SSL is enabled => private key path must be provided')
-        key_path = os.path.expanduser(key_path)
-        if not os.path.exists(key_path):
-            raise NonRecoverableError(
-                'The private key path [{0}] does not exist'
-                    .format(key_path))
-        os.environ[constants.CLOUDIFY_SSL_CERT] = cert_path
-        rest_port = constants.SECURED_REST_PORT
-
-        # copy cert and key files to the host,
-        _copy_ssl_files(local_cert_path=cert_path,
-                        remote_cert_path=HOST_SSL_CERTIFICATE_PATH,
-                        local_key_path=key_path,
-                        remote_key_path=HOST_SSL_PRIVATE_KEY_PATH)
+        # TODO: Must revisit this awesomeness at some stage
+        # cert_path = ssl_configuration.get(
+        #     constants.SSL_CERTIFICATE_PATH_PROPERTY_NAME)
+        # if not cert_path:
+        #     raise NonRecoverableError(
+        #         'SSL is enabled => certificate path must be provided')
+        # cert_path = os.path.expanduser(cert_path)
+        # if not os.path.exists(cert_path):
+        #     raise NonRecoverableError(
+        #         'The certificate path [{0}] does not exist'
+        #             .format(cert_path))
+        # key_path = ssl_configuration.get(
+        #     constants.SSL_PRIVATE_KEY_PROPERTY_NAME)
+        # if not key_path:
+        #     raise NonRecoverableError(
+        #         'SSL is enabled => private key path must be provided')
+        # key_path = os.path.expanduser(key_path)
+        # if not os.path.exists(key_path):
+        #     raise NonRecoverableError(
+        #         'The private key path [{0}] does not exist'
+        #             .format(key_path))
+        # os.environ[constants.CLOUDIFY_SSL_CERT] = cert_path
+        # rest_port = constants.SECURED_REST_PORT
+        #
+        # _copy_ssl_files(local_cert_path=cert_path,
+        #                 remote_cert_path=HOST_SSL_CERTIFICATE_PATH,
+        #                 local_key_path=key_path,
+        #                 remote_key_path=HOST_SSL_PRIVATE_KEY_PATH)
+        rest_port = constants.DEFAULT_REST_PORT
     else:
         rest_port = constants.DEFAULT_REST_PORT
-
     ctx.instance.runtime_properties[REST_PORT] = rest_port
 
 
 @operation
 def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDIFY_HOME_DIR,
                      docker_path=DEFAULT_DOCKER_PATH, elasticsearch_host=DEFAULT_ELASTICSEARCH_HOST,
-                     elasticsearch_port=DEFAULT_ELASTICSEARCH_PORT, use_sudo=True, provider_context=None,
-                     bootstrap_elasticsearch=True,
-                     docker_service_start_command=None, privileged=False, **kwargs):
-    # TODO: revisit this code
-    # if 'containers_started' in ctx.instance.runtime_properties:
-    #     try:
-    #         recover_docker(docker_path, use_sudo, docker_service_start_command)
-    #         _update_manager_deployment()
-    #     except Exception:
-    #         _update_manager_deployment(local_only=True)
-    #         raise
-    #
-    #     return
+                     elasticsearch_port=DEFAULT_ELASTICSEARCH_PORT, provider_context=None,
+                     bootstrap_elasticsearch=True, **kwargs):
     from fabric_plugin.tasks import FabricTaskError
 
     global lgr
@@ -207,6 +133,7 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
 
     def post_bootstrap_actions(wait_for_services_timeout=180):
         import sys
+
         port = 80
         lgr.info(
             'waiting for cloudify management services to start on port {0}'.format(port))
@@ -223,6 +150,7 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
             except:
                 lgr.error('Failed to bootstrap Elasticsearch Indexes')
                 lgr.error(str(sys.exc_info()))
+                raise
         else:
             lgr.info('Skipping Elasticsearch Bootstrap as not required by Blueprint')
 
@@ -238,17 +166,9 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
         ctx.instance.runtime_properties['containers_started'] = 'True'
         return True
 
-    # if ctx.operation.retry_number > 0:
-    #     return post_bootstrap_actions(wait_for_services_timeout=15)
-
     _run_command('mkdir -p {0}'.format(cloudify_home))
-    docker_exec_command = docker_path
-    # TODO: Deal with installation of Docker if needed
-    # docker_exec_command = _install_docker_if_required(
-    #     docker_path,
-    #     use_sudo,
-    #     docker_service_start_command)
 
+    docker_exec_command = docker_path
     data_container_name = 'data'
     cfy_container_name = 'cfy'
     if _container_exists(docker_exec_command, data_container_name) or \
@@ -351,42 +271,6 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
     return post_bootstrap_actions()
 
 
-def recover_docker(docker_path=None, use_sudo=True,
-                   docker_service_start_command=None):
-    global lgr
-    lgr = ctx.logger
-
-    manager_ip = fabric.api.env.host_string
-    lgr.info('initializing manager on the machine at {0}'.format(manager_ip))
-    _install_docker_if_required(docker_path, use_sudo,
-                                docker_service_start_command)
-
-    lgr.info('waiting for cloudify management services to restart')
-    port = ctx.instance.runtime_properties[REST_PORT]
-    started = _wait_for_management(manager_ip, timeout=180, port=port)
-    _recover_deployments(docker_path, use_sudo)
-    if not started:
-        err = 'failed waiting for cloudify management services to restart.'
-        lgr.info(err)
-        raise NonRecoverableError(err)
-
-
-def _recover_deployments(docker_path=None, use_sudo=True):
-    ctx.logger.info('Recovering deployments...')
-    script_relpath = ctx.instance.runtime_properties.get(
-        'recovery_script_relpath')
-    if not script_relpath:
-        raise NonRecoverableError('Cannot recover deployments. No recovery '
-                                  'script specified.')
-    script = ctx.download_resource(
-        script_relpath)
-    fabric.api.put(script, '~/recover_deployments.sh')
-    _run_command('chmod +x ~/recover_deployments.sh')
-    _run_command_in_cfy('/tmp/home/recover_deployments.sh',
-                        docker_path=docker_path,
-                        use_sudo=use_sudo)
-
-
 def _get_backup_files_cmd(cloudify_home):
     container_tmp_homedir_path = '/tmp/home'
     backup_homedir_cmd = 'cp -rf {0}/{1}/. /root' \
@@ -442,46 +326,16 @@ def _handle_plugins_and_create_install_cmd(plugins):
             fabric.api.put(fileobj, '~/{0}'.format(tar_remote_path))
             plugin['source'] = 'file:///root/{0}'.format(tar_remote_path)
 
-    # render script template and copy it to host's home dir
     script_template = pkgutil.get_data('cloudify_cli.bootstrap.resources',
                                        'install_plugins.sh.template')
     script = jinja2.Template(script_template).render(plugins=plugins)
     fabric.api.put(StringIO(script), '~/{0}'.format(install_plugins))
     _run_command('chmod +x ~/{0}'.format(install_plugins))
-    # path to script on container after host's home has been copied to
-    # container's home
+
     return '/root/{0}'.format(install_plugins)
 
 
-def _is_docker_installed(docker_path, use_sudo):
-    """
-    Returns true if docker run command exists
-    :param docker_path: the docker path
-    :param use_sudo: use sudo to run docker
-    :return: True if docker run command exists, False otherwise
-    """
-    # CFY-1627 - plugin dependency should be removed.
-    from fabric_plugin.tasks import FabricTaskError
-
-    try:
-        if use_sudo:
-            out = fabric.api.run('sudo which {0}'.format(docker_path))
-        else:
-            out = fabric.api.run('which {0}'.format(docker_path))
-        if not out:
-            return False
-        return True
-    except FabricTaskError:
-        return False
-
-
 def _wait_for_management(ip, timeout, port=constants.DEFAULT_REST_PORT):
-    """ Wait for url to become available
-        :param ip: the manager IP
-        :param timeout: in seconds
-        :param port: port used by the rest service.
-        :return: True of False
-    """
     protocol = 'http' if port == constants.DEFAULT_REST_PORT else 'https'
     validation_url = '{0}://{1}:{2}/version'.format(protocol, ip, port)
     lgr.info('waiting for url {0} to become available'.format(validation_url))
@@ -572,27 +426,6 @@ def _copy_agent_key(agent_local_key_path, agent_remote_key_path):
     fabric.api.put(agent_local_key_path, agent_remote_key_path)
 
 
-def _update_manager_deployment(local_only=False):
-    # get the current provider from the runtime property set on bootstrap
-    provider_context = ctx.instance.runtime_properties[
-        PROVIDER_RUNTIME_PROPERTY]
-
-    # construct new manager deployment
-    provider_context['cloudify'][
-        'manager_deployment'] = _dump_manager_deployment()
-
-    # update locally
-    ctx.instance.runtime_properties[
-        PROVIDER_RUNTIME_PROPERTY] = provider_context
-    with utils.update_wd_settings() as wd_settings:
-        wd_settings.set_provider_context(provider_context)
-
-    if not local_only:
-        # update on server
-        rest_client = utils.get_rest_client()
-        rest_client.manager.update_context('provider', provider_context)
-
-
 def _upload_provider_context(remote_agents_private_key_path, cloudify_home,
                              provider_context=None):
     ctx.logger.info('updating provider context on management server...')
@@ -621,7 +454,6 @@ def _upload_provider_context(remote_agents_private_key_path, cloudify_home,
     upload_provider_context_cmd = 'curl --fail -v -XPOST http://localhost:8101/provider/context -H ' \
                                   '"Content-Type: application/json" -d @{0}'.format(context_path)
 
-    # uploading the provider context to the REST service
     _run_command(upload_provider_context_cmd)
 
 
@@ -713,16 +545,13 @@ def _container_exists(docker_exec_command, container_name):
 
 def _run_docker_container(docker_exec_command, container_options,
                           container_name, attempts_on_corrupt=1):
-    # CFY-1627 - plugin dependency should be removed.
-    from fabric_plugin.tasks import FabricTaskError
-
     run_cmd = '{0} run --name {1} {2}' \
         .format(docker_exec_command, container_name, container_options)
     for i in range(0, attempts_on_corrupt):
         try:
             lgr.debug('starting docker container {0}'.format(container_name))
             return _run_command(run_cmd)
-        except FabricTaskError:
+        except:
             lgr.debug('container execution failed on attempt {0}/{1}'
                       .format(i + 1, attempts_on_corrupt))
             container_exists = _container_exists(docker_exec_command,
