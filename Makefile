@@ -47,5 +47,5 @@ bac:
 	cp -f dist/bootstrap-local-manager-plugin-1.2.zip ~/tmp/
 	cp -f plugin.yaml ~/tmp/bootstrap-local-manager-plugin-1.2.yaml
 	-pip uninstall bootstrap-local-manager-plugin==1.2 -y
-	cd ~/projects/cloudify-manager-blueprints/local && cfy init -r \
-		&& cfy local install-plugins -p simple-manager-blueprint.yaml
+	cd blueprint-test && cfy init -r \
+		&& cfy local install-plugins -p local-manager-blueprint.yaml

@@ -67,13 +67,17 @@ def creation_validation(cloudify_packages, **kwargs):
 
 @operation
 def stop_manager_container(docker_path='docker', use_sudo=False, **kwargs):
-    _run_command('{0} stop cfy'.format(docker_path), use_sudo)
+    global lgr
+    lgr = ctx.logger
+    _run_command('{0} stop cfy'.format(docker_path), use_sudo=use_sudo)
     lgr.info('Manager container Stopped')
 
 
 @operation
 def clean_manager_containers_and_image(docker_path='docker', use_sudo=False, delete_data_container=True,
                                        delete_images=True, **kwargs):
+    global lgr
+    lgr = ctx.logger
     _run_command('{0} rm cfy'.format(docker_path), ignore_failures=True, use_sudo=use_sudo)
     if delete_data_container:
         _run_command('{0} rm data'.format(docker_path), ignore_failures=True, use_sudo=use_sudo)

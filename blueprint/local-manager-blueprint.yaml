@@ -78,6 +78,14 @@ node_templates:
             elasticsearch_port:  { get_property: [manager, elasticsearch, port]}
             elasticsearch_bootstrap:  { get_property: [manager, elasticsearch, bootstrap]}
 
+        stop:
+          implementation:  bootstrap_local_manager.local_manager_plugin.bootstrap.stop_manager_container
+
+        delete:
+          implementation: bootstrap_local_manager.local_manager_plugin.bootstrap.clean_manager_containers_and_image
+          inputs:
+            delete_data_container: true
+            delete_image: true
 
 
 plugins:
