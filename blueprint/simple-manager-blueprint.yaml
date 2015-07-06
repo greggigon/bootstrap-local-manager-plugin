@@ -1,0 +1,61 @@
+tosca_definitions_version: cloudify_dsl_1_0
+
+imports:
+  - http://www.getcloudify.org/spec/cloudify/3.2/types.yaml
+  - https://raw.githubusercontent.com/greggigon/bootstrap-local-manager-plugin/1.2/plugin.yaml
+
+
+inputs:
+  resources_prefix:
+    type: string
+  manager_ip:
+    type: string
+  agent_user:
+    type: string
+
+
+
+node_templates:
+  manager:
+    type: cloudify.nodes.CloudifyManager
+    properties:
+      cloudify_packages:
+        agents:
+          ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.2.0/ga-RELEASE/cloudify-ubuntu-agent_3.2.0-ga-b200_amd64.deb
+          centos_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.2.0/ga-RELEASE/cloudify-centos-final-agent_3.2.0-ga-b200_amd64.deb
+          windows_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.2.0/ga-RELEASE/cloudify-windows-agent_3.2.0-ga-b200_amd64.deb
+        docker:
+           docker_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.2.0/ga-RELEASE/cloudify-docker_3.2.0-ga-b200.tar
+
+      cloudify:
+        resources_prefix: { get_input: resources_prefix }
+
+        cloudify_agent:
+          min_workers: 0
+          max_workers: 5
+          remote_execution_port: 22
+          user: { get_input: agent_user }
+
+        workflows:
+          task_retries: -1  # this means forever
+          task_retry_interval: 30
+
+        policy_engine:
+          start_timeout: 30
+
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        start:
+          implementation: bootstrap_local_manager.local_manager_plugin.bootstrap.bootstrap_docker
+          inputs:
+            cloudify_packages: { get_property: [manager, cloudify_packages]}
+            manager_ip: { get_input: manager_ip }
+
+
+plugins:
+  bootstrap_local_manager: 
+    install: true
+    executor: central_deployment_agent
+    source: https://github.com/greggigon/bootstrap-local-manager-plugin/archive/1.2.zip
+
+
