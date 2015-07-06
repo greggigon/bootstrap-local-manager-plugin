@@ -1,3 +1,3 @@
-manager_ip: '127.0.0.1
+manager_ip: '127.0.0.1'
 resources_prefix: ''
 agent_user: 'root'

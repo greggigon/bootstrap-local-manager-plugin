@@ -5,6 +5,25 @@ imports:
   - https://raw.githubusercontent.com/greggigon/bootstrap-local-manager-plugin/1.2/plugin.yaml
 
 
+node_types:
+  cloudify.nodes.LocalCloudifyManager:
+    derived_from: cloudify.nodes.CloudifyManager
+    properties:
+      elasticsearch:
+        description: 'Elasticsearch properties'
+        default:
+          host:
+            type: string
+            default: 'localhost'
+          port:
+            type: string
+            default: 9200
+          bootstrap:
+            description: 'Whether to bootstrap or not Elasticsearch with Cloudify Indexes and Mapping'
+            type: boolean
+            default: true
+
+
 inputs:
   resources_prefix:
     type: string
@@ -14,11 +33,16 @@ inputs:
     type: string
 
 
-
 node_templates:
   manager:
-    type: cloudify.nodes.CloudifyManager
+    type: cloudify.nodes.LocalCloudifyManager
     properties:
+
+      elasticsearch:
+        host: localhost
+        port: 9200
+        bootstrap: true
+
       cloudify_packages:
         agents:
           ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.2.0/ga-RELEASE/cloudify-ubuntu-agent_3.2.0-ga-b200_amd64.deb
@@ -50,6 +74,10 @@ node_templates:
           inputs:
             cloudify_packages: { get_property: [manager, cloudify_packages]}
             manager_ip: { get_input: manager_ip }
+            elasticsearch_host:  { get_property: [manager, elasticsearch, host]}
+            elasticsearch_port:  { get_property: [manager, elasticsearch, port]}
+            elasticsearch_bootstrap:  { get_property: [manager, elasticsearch, bootstrap]}
+
 
 
 plugins:

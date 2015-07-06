@@ -123,7 +123,7 @@ def _handle_ssl_configuration(ssl_configuration):
 def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDIFY_HOME_DIR,
                      docker_path=DEFAULT_DOCKER_PATH, elasticsearch_host=DEFAULT_ELASTICSEARCH_HOST,
                      elasticsearch_port=DEFAULT_ELASTICSEARCH_PORT, provider_context=None,
-                     bootstrap_elasticsearch=True, **kwargs):
+                     elasticsearch_bootstrap=True, **kwargs):
     from fabric_plugin.tasks import FabricTaskError
 
     global lgr
@@ -144,7 +144,7 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
             lgr.info(err)
             raise NonRecoverableError(err)
 
-        if bootstrap_elasticsearch:
+        if elasticsearch_bootstrap:
             try:
                 _bootstrap_elasticsearch(elasticsearch_host, elasticsearch_port)
             except:
