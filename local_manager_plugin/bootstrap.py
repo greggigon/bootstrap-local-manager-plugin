@@ -43,26 +43,30 @@ lgr = None
 
 
 @operation
-def creation_validation(cloudify_packages, **kwargs):
-    if not isinstance(cloudify_packages, dict):
+def creation_validation(cloudify_packages, docker, **kwargs):
+    if not cloudify_packages or not isinstance(cloudify_packages, dict):
         raise NonRecoverableError('"cloudify_packages" must be a '
                                   'dictionary property')
-    docker_packages = cloudify_packages.get('docker')
 
-    if not docker_packages or not isinstance(docker_packages, dict):
-        raise NonRecoverableError(
-            '"docker" must be a non-empty dictionary property under '
-            '"cloudify_packages"')
-
-    packages_urls = docker_packages.values()
     agent_packages = cloudify_packages.get('agents', {})
     if not isinstance(agent_packages, dict):
         raise NonRecoverableError('"cloudify_packages.agents" must be a '
                                   'dictionary property')
 
-    packages_urls.extend(agent_packages.values())
-    for package_url in packages_urls:
-        _validate_package_url_accessible(package_url)
+    for package_name in agent_packages:
+        _validate_package_url_accessible(agent_packages.get(package_name))
+
+    _validate_docker_properties(docker)
+
+
+def _validate_docker_properties(docker):
+    if not docker or not isinstance(docker, dict):
+        raise NonRecoverableError('"docker" must be a dictionary property')
+    if ('import_url' not in docker or not docker.get('import_url')) and \
+            ('registry_url' not in docker or not docker.get('registry_url')):
+        raise NonRecoverableError('"docker" properties needs one of URLs being set. import_url or registry_url')
+    if docker.get('import_url') and ('registry_url' not in docker or not docker.get('registry_url')):
+        _validate_package_url_accessible(docker.get('import_url'))
 
 
 @operation
@@ -124,7 +128,7 @@ def _handle_ssl_configuration(ssl_configuration):
 
 
 @operation
-def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDIFY_HOME_DIR,
+def bootstrap_docker(cloudify_packages, manager_ip, docker, cloudify_home=DEFAULT_CLOUDIFY_HOME_DIR,
                      docker_path=DEFAULT_DOCKER_PATH, elasticsearch_host=DEFAULT_ELASTICSEARCH_HOST,
                      elasticsearch_port=DEFAULT_ELASTICSEARCH_PORT, provider_context=None,
                      elasticsearch_bootstrap=True, **kwargs):
@@ -181,19 +185,7 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
             .format(data_container_name, cfy_container_name)
         raise NonRecoverableError(err)
 
-    docker_image_url = cloudify_packages.get('docker', {}).get('docker_url')
-    if not docker_image_url:
-        raise NonRecoverableError('no docker URL found in packages')
-    try:
-        lgr.info('importing cloudify-manager docker image from {0}'
-                 .format(docker_image_url))
-        _run_command('{0} import {1} cloudify'
-                     .format(docker_exec_command, docker_image_url))
-    except FabricTaskError as e:
-        err = 'failed importing Cloudify docker image from {0}. reason:{1}' \
-            .format(docker_image_url, str(e))
-        lgr.error(err)
-        raise NonRecoverableError(err)
+    _get_cloudify_docker_container(docker, lgr)
 
     cloudify_config = ctx.node.properties['cloudify']
     security_config = cloudify_config.get('security', {})
@@ -254,6 +246,8 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
                               '-v /etc/service/elasticsearch/logs '
                               '-v /opt/influxdb/shared/data '
                               '-v /var/log/cloudify '
+                              '-e http_proxy= '
+                              '-e https_proxy= '
                               'cloudify sh -c \'{2}\''
                               .format(agent_pkgs_mount_options,
                                       home_dir_mount_path,
@@ -273,6 +267,26 @@ def bootstrap_docker(cloudify_packages, manager_ip, cloudify_home=DEFAULT_CLOUDI
         raise NonRecoverableError(err)
 
     return post_bootstrap_actions()
+
+
+def _get_cloudify_docker_container(docker, lgr):
+    _validate_docker_properties(docker)
+
+    try:
+        registry_url = docker.get('registry_url')
+        docker_command = docker.get('path')
+        if registry_url:
+            lgr.info('pulling cloudify-manager docker image from {0}'.format(docker['registry_url']))
+            _run_command('{0} pull {1} && docker tag -f {1} cloudify'.format(docker_command, registry_url))
+        else:
+            import_url = docker.get('import_url')
+            lgr.info('importing cloudify-manager docker image from {0}'.format(import_url))
+            _run_command('{0} import {1} cloudify'.format(docker_command, import_url))
+
+    except SystemExit as e:
+        lgr.error('failed importing Cloudify docker image')
+        lgr.error(e)
+        raise NonRecoverableError('failed importing Cloudify docker image')
 
 
 def _get_backup_files_cmd(cloudify_home):
@@ -517,22 +531,11 @@ def _run_command(command, use_sudo=False, as_user=None, capture=False, ignore_fa
     lgr.info(">> command: [{0}]".format(the_command))
     try:
         return run_local(the_command, capture=capture)
-    except:
+    except SystemExit as e:
+        lgr.info(e)
         if ignore_failures:
             return True
         raise
-
-
-def _run_command_in_cfy(command, docker_path=None, use_sudo=True,
-                        terminal=False):
-    if not docker_path:
-        docker_path = 'docker'
-    exec_command = 'exec -t' if terminal else 'exec'
-    full_command = '{0} {1} cfy {2}'.format(
-        docker_path, exec_command, command)
-    if use_sudo:
-        full_command = 'sudo {0}'.format(full_command)
-    _run_command(full_command)
 
 
 def _container_exists(docker_exec_command, container_name):
@@ -555,7 +558,7 @@ def _run_docker_container(docker_exec_command, container_options,
         try:
             lgr.debug('starting docker container {0}'.format(container_name))
             return _run_command(run_cmd)
-        except:
+        except SystemExit:
             lgr.debug('container execution failed on attempt {0}/{1}'
                       .format(i + 1, attempts_on_corrupt))
             container_exists = _container_exists(docker_exec_command,

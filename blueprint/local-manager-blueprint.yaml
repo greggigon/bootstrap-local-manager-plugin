@@ -22,6 +22,21 @@ node_types:
             description: 'Whether to bootstrap or not Elasticsearch with Cloudify Indexes and Mapping'
             type: boolean
             default: true
+      docker:
+        description: 'Docker related properties'
+        default:
+          path:
+            type: string
+            default: 'docker'
+            description: 'Docker executable path or docker command'
+          import_url:
+            type: string
+            default: ''
+            description: 'HTTP Url for Exported Docker container'
+          registry_url:
+            type: string
+            default: ''
+            description: 'Docker registry location for Cloudify Container'
 
 
 inputs:
@@ -37,6 +52,9 @@ node_templates:
   manager:
     type: cloudify.nodes.LocalCloudifyManager
     properties:
+      docker:
+        path: docker
+        registry_url: host0000:5000/cloudify:latest
 
       elasticsearch:    # Having Elasticsearch not packaged with Docker CFY container, makes it usefull to bootstrap CFY Indexes
         host: localhost
@@ -48,8 +66,6 @@ node_templates:
           ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.2.0/ga-RELEASE/cloudify-ubuntu-agent_3.2.0-ga-b200_amd64.deb
           centos_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.2.0/ga-RELEASE/cloudify-centos-final-agent_3.2.0-ga-b200_amd64.deb
           windows_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.2.0/ga-RELEASE/cloudify-windows-agent_3.2.0-ga-b200_amd64.deb
-        docker:
-           docker_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.2.0/ga-RELEASE/cloudify-docker_3.2.0-ga-b200.tar
 
       cloudify:
         resources_prefix: { get_input: resources_prefix }
@@ -73,6 +89,7 @@ node_templates:
           implementation: bootstrap_local_manager.local_manager_plugin.bootstrap.bootstrap_docker
           inputs:
             cloudify_packages: { get_property: [manager, cloudify_packages]}
+            docker: { get_property: [manager, docker] }
             manager_ip: { get_input: manager_ip }
             elasticsearch_host:  { get_property: [manager, elasticsearch, host]}
             elasticsearch_port:  { get_property: [manager, elasticsearch, port]}
@@ -86,6 +103,13 @@ node_templates:
           inputs:
             delete_data_container: true   # if Data container should be removed when `cfy teardown` is called
             delete_image: true            # if downloaded Container Image should be removes when `cfy teardown` is called
+
+      cloudify.interfaces.validation:
+        creation:
+          implementation: bootstrap_local_manager.local_manager_plugin.bootstrap.creation_validation
+          inputs:
+            cloudify_packages: { get_property: [manager, cloudify_packages] }
+            docker: { get_property: [manager, docker] }
 
 
 plugins:
