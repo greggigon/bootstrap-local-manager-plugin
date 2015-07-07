@@ -38,6 +38,7 @@ DEFAULT_SECURITY_MODE = False
 DEFAULT_DOCKER_PATH = 'docker'
 DEFAULT_ELASTICSEARCH_HOST = 'localhost'
 DEFAULT_ELASTICSEARCH_PORT = 9200
+DEFAULT_HOST_KEYS_FOLDER = '~/keys'
 
 lgr = None
 
@@ -131,9 +132,7 @@ def _handle_ssl_configuration(ssl_configuration):
 def bootstrap_docker(cloudify_packages, manager_ip, docker, cloudify_home=DEFAULT_CLOUDIFY_HOME_DIR,
                      docker_path=DEFAULT_DOCKER_PATH, elasticsearch_host=DEFAULT_ELASTICSEARCH_HOST,
                      elasticsearch_port=DEFAULT_ELASTICSEARCH_PORT, provider_context=None,
-                     elasticsearch_bootstrap=True, **kwargs):
-    from fabric_plugin.tasks import FabricTaskError
-
+                     elasticsearch_bootstrap=True, host_keys_folder=DEFAULT_HOST_KEYS_FOLDER, **kwargs):
     global lgr
     lgr = ctx.logger
 
@@ -246,12 +245,12 @@ def bootstrap_docker(cloudify_packages, manager_ip, docker, cloudify_home=DEFAUL
                               '-v /etc/service/elasticsearch/logs '
                               '-v /opt/influxdb/shared/data '
                               '-v /var/log/cloudify '
+                              '-v {3}:/keys '
                               '-e http_proxy= '
                               '-e https_proxy= '
                               'cloudify sh -c \'{2}\''
-                              .format(agent_pkgs_mount_options,
-                                      home_dir_mount_path,
-                                      data_container_start_cmd))
+                              .format(agent_pkgs_mount_options, home_dir_mount_path, data_container_start_cmd,
+                                      host_keys_folder))
 
     try:
         lgr.info('starting a new cloudify data container')
@@ -260,7 +259,7 @@ def bootstrap_docker(cloudify_packages, manager_ip, docker, cloudify_home=DEFAUL
         lgr.info('starting a new cloudify mgmt docker services container')
         _run_docker_container(docker_exec_command, cfy_management_options,
                               cfy_container_name, attempts_on_corrupt=5)
-    except FabricTaskError as e:
+    except SystemExit as e:
         err = 'failed running cloudify docker container. ' \
               'error is {0}'.format(str(e))
         lgr.error(err)
