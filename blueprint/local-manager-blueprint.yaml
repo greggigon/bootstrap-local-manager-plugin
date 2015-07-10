@@ -37,7 +37,10 @@ node_types:
             type: string
             default: ''
             description: 'Docker registry location for Cloudify Container'
-
+          extra_parameters:
+            type: string
+            default: ''
+            description: 'Extra stuff to pass to Container when it starts, eg. -e http_proxy=some-host:100'
 
 inputs:
   resources_prefix:
@@ -55,6 +58,8 @@ node_templates:
       docker:
         path: docker
         registry_url: host0000:5000/cloudify:latest
+        extra_parameters: ''
+
 
       elasticsearch:    # Having Elasticsearch not packaged with Docker CFY container, makes it usefull to bootstrap CFY Indexes
         host: localhost

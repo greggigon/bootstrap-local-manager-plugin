@@ -6,6 +6,7 @@ import tarfile
 import tempfile
 from time import sleep, time
 from StringIO import StringIO
+import traceback
 
 import jinja2
 import fabric
@@ -130,7 +131,7 @@ def _handle_ssl_configuration(ssl_configuration):
 
 @operation
 def bootstrap_docker(cloudify_packages, manager_ip, docker, cloudify_home=DEFAULT_CLOUDIFY_HOME_DIR,
-                     docker_path=DEFAULT_DOCKER_PATH, elasticsearch_host=DEFAULT_ELASTICSEARCH_HOST,
+                     elasticsearch_host=DEFAULT_ELASTICSEARCH_HOST,
                      elasticsearch_port=DEFAULT_ELASTICSEARCH_PORT, provider_context=None,
                      elasticsearch_bootstrap=True, host_keys_folder=DEFAULT_HOST_KEYS_FOLDER, **kwargs):
     global lgr
@@ -175,7 +176,7 @@ def bootstrap_docker(cloudify_packages, manager_ip, docker, cloudify_home=DEFAUL
 
     _run_command('mkdir -p {0}'.format(cloudify_home))
 
-    docker_exec_command = docker_path
+    docker_exec_command = docker.get('path')
     data_container_name = 'data'
     cfy_container_name = 'cfy'
     if _container_exists(docker_exec_command, data_container_name) or \
@@ -196,14 +197,14 @@ def bootstrap_docker(cloudify_packages, manager_ip, docker, cloudify_home=DEFAUL
     lgr.info('exposing all ports from container, using HOST network}')
     cfy_management_options = ('-t '
                               '--volumes-from data '
-                              '--net=host '
                               '-e MANAGEMENT_IP={0} '
-                              '-e MANAGER_REST_SECURITY_CONFIG_PATH={1} '
+                              '-e MANAGER_REST_SECURITY_CONFIG_PATH={1} {2}'
                               '--restart=always '
                               '-d '
                               'cloudify '
                               '/sbin/my_init'
-                              .format(manager_ip, os.path.normpath("/root/{0}".format(security_config_file))))
+                              .format(manager_ip, os.path.normpath("/root/{0}".format(security_config_file)),
+                                      docker.get('extra_parameters')))
 
     agent_packages = cloudify_packages.get('agents')
     if agent_packages:
@@ -531,7 +532,8 @@ def _run_command(command, use_sudo=False, as_user=None, capture=False, ignore_fa
     try:
         return run_local(the_command, capture=capture)
     except SystemExit as e:
-        lgr.info(e)
+        lgr.info(e.message)
+        lgr.info(traceback.format_exc())
         if ignore_failures:
             return True
         raise
