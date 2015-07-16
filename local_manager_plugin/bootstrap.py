@@ -1,5 +1,5 @@
 import os
-import urllib
+import urllib2
 import json
 import pkgutil
 import tarfile
@@ -362,7 +362,7 @@ def _wait_for_management(ip, timeout, port=constants.DEFAULT_REST_PORT):
 
     while end - time() >= 0:
         try:
-            status = urllib.urlopen(validation_url).getcode()
+            status = urllib2.urlopen(validation_url).getcode()
             if status == 200:
                 return True
 
@@ -585,7 +585,7 @@ def get_machine_distro():
 def _validate_package_url_accessible(package_url):
     ctx.logger.debug('checking whether url {0} is accessible'.format(
         package_url))
-    status = urllib.urlopen(package_url).getcode()
+    status = urllib2.urlopen(package_url).getcode()
     if not status == 200:
         err = ('url {0} is not accessible'.format(package_url))
         ctx.logger.error('VALIDATION ERROR: ' + err)
